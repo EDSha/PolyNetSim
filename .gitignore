@@ -1,0 +1,10 @@
+# Виртуальное окружение Python
+venv/
+__pycache__/
+*.pyc
+
+# Данные и результаты расчётов
+results/
+trajectories/
+*.h5
+*.hdf5
