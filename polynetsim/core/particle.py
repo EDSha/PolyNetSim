@@ -2,8 +2,10 @@
 Модуль coarse-grained частицы.
 """
 from enum import Enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
+from typing import List
+
 
 class ParticleType(Enum):
     """Типы CG-частиц для разных мономеров."""
@@ -15,6 +17,16 @@ class ParticleType(Enum):
     EPOXY_AMINE   = "EPOXY_N"
     RADICAL       = "RAD"
     NANOPARTICLE  = "NP"
+    # simple model
+    SIM_MONOMER = "SIM_MONO"   # упрощённый мономер
+    SIM_RADICAL = "SIM_RAD"    # упрощённый радикал
+    SIM_INERT = "SIM_INERT"    # упрощённое инертное звено цепи
+    INITIATOR = "INIT"       # молекула инициатора
+
+    SIM_VINYL = "SIM_VINYL"           # винильная группа (активная)
+    SIM_BACKBONE = "SIM_BACKBONE"     # остовная группа (инертная)
+    SIM_RADICAL_SLOW = "SIM_RAD_S"    # медленный радикал
+    # Можно пока оставить SIM_MONOMER, SIM_RADICAL, но для ясности заведём новые.
 
 @dataclass
 class Particle:
@@ -27,6 +39,7 @@ class Particle:
     radius: float = 0.5
     functional_groups: int = 1
     is_reactive: bool = True
+    bonded_to: List[int] = field(default_factory=list)  # индексы связанных частиц
 
     def __post_init__(self):
         if self.velocity is None:
