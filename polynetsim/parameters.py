@@ -39,7 +39,7 @@ PARTICLE_PARAMS: Dict[str, ParticleTypeParams] = {
 @dataclass
 class ReactionParameters:
     """Кинетические параметры реакций (пока заглушка)."""
-    k_initiation: float = 0.01   # константа инициирования
+    k_initiation: float = 1.0   # константа инициирования
     k_propagation: float = 1.0    # константа роста
     reaction_radius: float = 0.6  # Радиус захвата радикала
     # позже добавим другие

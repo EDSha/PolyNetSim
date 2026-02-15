@@ -26,6 +26,7 @@ class ParticleType(Enum):
     SIM_VINYL = "SIM_VINYL"           # винильная группа (активная)
     SIM_BACKBONE = "SIM_BACKBONE"     # остовная группа (инертная)
     SIM_RADICAL_SLOW = "SIM_RAD_S"    # медленный радикал
+
     # Можно пока оставить SIM_MONOMER, SIM_RADICAL, но для ясности заведём новые.
 
 @dataclass
@@ -40,6 +41,9 @@ class Particle:
     functional_groups: int = 1
     is_reactive: bool = True
     bonded_to: List[int] = field(default_factory=list)  # индексы связанных частиц
+    chain_id: int = -1      # идентификатор полимерной цепи (-1 = не назначен)
+    is_free: bool = True    # True для частиц свободного мономера
+
 
     def __post_init__(self):
         if self.velocity is None:

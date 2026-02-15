@@ -17,7 +17,7 @@ from polynetsim.core.reactor import Reactor, ReactorConfig
 #     bonds = [(0,1), (0,2)]
 #     return particles, bonds
 
-def create_triple_monomer(center, orientation='x'):
+def create_triple_monomer(center, chain_id, orientation='x'):
     """
     Создаёт мономер из трёх частиц:
     - две винильные группы (SIM_VINYL) по бокам
@@ -36,9 +36,9 @@ def create_triple_monomer(center, orientation='x'):
         pos2 = center + np.array([0,-d, 0])
     
     particles = [
-        Particle(id=0, ptype=ParticleType.SIM_BACKBONE, position=pos0, radius=0.3, mass=1.0),
-        Particle(id=1, ptype=ParticleType.SIM_VINYL,   position=pos1, radius=0.3, mass=1.0),
-        Particle(id=2, ptype=ParticleType.SIM_VINYL,   position=pos2, radius=0.3, mass=1.0),
+        Particle(id=0, ptype=ParticleType.SIM_BACKBONE, position=pos0, radius=0.3, mass=1.0, chain_id=chain_id, is_free=True),
+        Particle(id=1, ptype=ParticleType.SIM_VINYL,   position=pos1, radius=0.3, mass=1.0, chain_id=chain_id, is_free=True),
+        Particle(id=2, ptype=ParticleType.SIM_VINYL,   position=pos2, radius=0.3, mass=1.0, chain_id=chain_id, is_free=True),
     ]
     bonds = [(0,1), (0,2)]
     return particles, bonds
@@ -54,16 +54,19 @@ def main():
     # Добавляем один инициатор
     init = Particle(id=0, ptype=ParticleType.INITIATOR,
                     position=[10.0,10.0,10.0], velocity=np.zeros(3),
-                    mass=1.0, radius=0.3)
+                    mass=1.0, radius=0.3, chain_id=-1, is_free=False)
     reactor.add_particle(init)
 
     # Добавляем несколько мономеров (каждый из 3 частиц)
     n_monomers = 3
     next_id = 1
+    next_chain_id = 1
     for i in range(n_monomers):
         angle = 2*np.pi*i/n_monomers
         center = np.array([10.0 + 0.8*np.cos(angle), 10.0 + 0.8*np.sin(angle), 10.0])
-        parts, bonds = create_triple_monomer(center, next_id)
+        parts, bonds = create_triple_monomer(center, next_chain_id, orientation='x')
+        #parts, bonds = create_triple_monomer(center, next_chain_id, next_id)
+        next_chain_id+=1
         for p in parts:
             reactor.add_particle(p)
         # Преобразуем локальные индексы связей (0,1,2) в глобальные с учётом next_id
@@ -90,7 +93,7 @@ def main():
         reactor.react(dt)
         if step % 50 == 0:
             n_init = sum(1 for p in reactor.particles if p.ptype==ParticleType.INITIATOR)
-            n_rad_n = sum(1 for p in reactor.particles if p.ptype==ParticleType.SIM_RADICAL_NORMAL)
+            n_rad_n = sum(1 for p in reactor.particles if p.ptype==ParticleType.SIM_RADICAL)
             n_rad_s = sum(1 for p in reactor.particles if p.ptype==ParticleType.SIM_RADICAL_SLOW)
             n_vinyl = sum(1 for p in reactor.particles if p.ptype==ParticleType.SIM_VINYL)
             n_inert = sum(1 for p in reactor.particles if p.ptype==ParticleType.SIM_INERT)

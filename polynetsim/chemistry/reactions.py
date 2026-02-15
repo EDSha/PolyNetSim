@@ -8,36 +8,32 @@ import random
 from typing import List, Tuple
 from polynetsim.core.particle import Particle, ParticleType
 
+def get_particles_by_chain(reactor, chain_id):
+    """Возвращает список индексов частиц с данным chain_id."""
+    return [i for i, p in enumerate(reactor.particles) if p.chain_id == chain_id]
+
+def merge_chains(reactor, target_chain, source_chain):
+    """Присваивает всем частицам с source_chain идентификатор target_chain."""
+    for i in get_particles_by_chain(reactor, source_chain):
+        reactor.particles[i].chain_id = target_chain
+
 def try_propagation(reactor, dt: float):
-    """
-    Обрабатывает реакции роста для трёхчастичного мономера:
-    - радикал (обычный или медленный) атакует винильную группу (SIM_VINYL)
-    - атакованная винильная группа становится обычным радикалом (SIM_RADICAL)
-    - атакующий радикал становится инертным (SIM_INERT)
-    - создаётся связь между ними
-    Для медленных радикалов (SIM_RADICAL_SLOW) константа скорости уменьшена.
-    """
     params = reactor.config.params.reaction
     kp = params.k_propagation
     r_cut = params.reaction_radius
     particles = reactor.particles
     reactions = 0
 
-    # Индексы радикалов обоих типов
     radicals = [i for i, p in enumerate(particles) if p.ptype in (ParticleType.SIM_RADICAL, ParticleType.SIM_RADICAL_SLOW)]
-    # Индексы винильных групп, которые ещё не прореагировали (имеют только внутримолекулярные связи)
-    # В трёхчастичном мономере у винила одна связь (с остовом). Если связей больше, значит, он уже участвовал в реакции.
     vinyls = [i for i, p in enumerate(particles) if p.ptype == ParticleType.SIM_VINYL and len(p.bonded_to) <= 1]
 
     for i_rad in radicals:
-        # Определяем тип радикала и эффективную константу
         is_slow = (particles[i_rad].ptype == ParticleType.SIM_RADICAL_SLOW)
         k_eff = kp * (0.1 if is_slow else 1.0)
 
         for i_vin in vinyls:
             if i_rad == i_vin:
                 continue
-            # Расстояние с учётом PBC
             delta = particles[i_vin].position - particles[i_rad].position
             if reactor.config.boundary_conditions == "periodic":
                 box = np.array(reactor.config.size)
@@ -50,22 +46,44 @@ def try_propagation(reactor, dt: float):
             if prob > 1.0:
                 prob = 1.0
             if random.random() < prob:
-                # Выполняем реакцию
-                # 1. Создаём связь
+                # Получаем chain_id и is_free
+                chain_rad = particles[i_rad].chain_id
+                chain_vin = particles[i_vin].chain_id
+                vin_free = particles[i_vin].is_free
+
+                # Создаём связь
                 if i_rad < i_vin:
                     reactor.bond_set.add((i_rad, i_vin))
                 else:
                     reactor.bond_set.add((i_vin, i_rad))
                 reactor.bonds.append((i_rad, i_vin))
-                # 2. Обновляем bonded_to
                 particles[i_rad].bonded_to.append(i_vin)
                 particles[i_vin].bonded_to.append(i_rad)
 
-                # 3. Меняем типы:
-                # Атакованная винильная группа становится обычным радикалом
-                particles[i_vin].ptype = ParticleType.SIM_RADICAL
-                # Атакующий радикал (любой) становится инертным
-                particles[i_rad].ptype = ParticleType.SIM_INERT
+                # Определяем тип реакции
+                if chain_rad == chain_vin:
+                    # Циклизация
+                    particles[i_rad].ptype = ParticleType.SIM_INERT
+                    particles[i_vin].ptype = ParticleType.SIM_RADICAL_SLOW
+                else:
+                    if vin_free:
+                        # Рост (присоединение свободного мономера)
+                        # Все частицы мономера винила получают chain_id радикала и is_free=False
+                        for idx in get_particles_by_chain(reactor, chain_vin):
+                            particles[idx].chain_id = chain_rad
+                            particles[idx].is_free = False
+                        particles[i_rad].ptype = ParticleType.SIM_INERT
+                        particles[i_vin].ptype = ParticleType.SIM_RADICAL
+                    else:
+                        # Сшивка
+                        # Объединяем цепи (меньший ID)
+                        new_chain = min(chain_rad, chain_vin)
+                        if new_chain == chain_rad:
+                            merge_chains(reactor, chain_rad, chain_vin)
+                        else:
+                            merge_chains(reactor, chain_vin, chain_rad)
+                        particles[i_rad].ptype = ParticleType.SIM_INERT
+                        particles[i_vin].ptype = ParticleType.SIM_RADICAL_SLOW
 
                 reactions += 1
                 break  # один радикал – одна реакция за шаг
@@ -103,7 +121,9 @@ def try_initiation(reactor, dt: float) -> int:
                     position=new_pos,
                     velocity=np.zeros(3),
                     mass=1.0,
-                    radius=0.3
+                    radius=0.3,
+                    chain_id=-1,       # временно, позже при реакции получит нормальный chain_id
+                    is_free=False      # радикал не свободный мономер
                 )
                 to_add.append(new_rad)
 
