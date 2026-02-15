@@ -10,14 +10,14 @@ from typing import Dict, Tuple
 class LJParameters:
     """Параметры потенциала Леннард-Джонса для всех частиц (пока общие)."""
     epsilon: float = 1.0       # глубина ямы
-    sigma: float = 0.3          # эффективный диаметр (нм)
+    sigma: float = 1.0          # эффективный диаметр (нм)
     cutoff_ratio: float = 2.5   # обрезание = sigma * cutoff_ratio
 
 @dataclass
 class BondParameters:
     """Параметры гармонической связи (общие для всех связей)."""
-    stiffness: float = 1000.0   # жёсткость (энергия/нм²)
-    length: float = 0.5         # равновесная длина (нм)
+    stiffness: float = 100.0  # в единицах ε/σ²
+    length: float = 1.0        # в единицах σ
 
 @dataclass
 class ParticleTypeParams:
@@ -39,9 +39,9 @@ PARTICLE_PARAMS: Dict[str, ParticleTypeParams] = {
 @dataclass
 class ReactionParameters:
     """Кинетические параметры реакций (пока заглушка)."""
-    k_initiation: float = 1.0   # константа инициирования
-    k_propagation: float = 1.0    # константа роста
-    reaction_radius: float = 0.6  # Радиус захвата радикала
+    k_initiation: float = 0.01   # константа инициирования (в единицах 1/τ)
+    k_propagation: float = 1.0    # константа роста (в единицах 1/τ)
+    reaction_radius: float = 2.0  # Радиус захвата радикала (в единицах σ)
     # позже добавим другие
 
 @dataclass
