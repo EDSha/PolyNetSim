@@ -1,4 +1,5 @@
 import sys
+import matplotlib.pyplot as plt
 from pathlib import Path
 root_dir = str(Path(__file__).parent.parent)
 sys.path.insert(0, root_dir)
@@ -88,6 +89,7 @@ def main():
 
     dt = 0.01
     steps = 200
+    reactor.plot(step=0, save_path="initial.png")  # опционально сохранить
     for step in range(steps):
         reactor.velocity_verlet_step(dt, gamma=0.0)
         reactor.react(dt)
@@ -98,6 +100,7 @@ def main():
             n_vinyl = sum(1 for p in reactor.particles if p.ptype==ParticleType.SIM_VINYL)
             n_inert = sum(1 for p in reactor.particles if p.ptype==ParticleType.SIM_INERT)
             print(f"Шаг {step}: иниц={n_init}, рад_N={n_rad_n}, рад_S={n_rad_s}, винил={n_vinyl}, инерт={n_inert}")
+            reactor.plot(step=step)
 
     print("\nИтоговые частицы:")
     for p in reactor.particles:

@@ -7,9 +7,14 @@ import numpy as np
 from typing import List, Optional, Tuple
 from dataclasses import dataclass, field
 import random
-from polynetsim.core.particle import Particle
+from collections import defaultdict
+from polynetsim.core.particle import Particle, ParticleType
 from polynetsim.parameters import ModelParameters
 from polynetsim.chemistry.reactions import try_propagation, try_initiation
+
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from collections import defaultdict
 
 @dataclass
 class ReactorConfig:
@@ -244,6 +249,80 @@ class Reactor:
         n_prop = try_propagation(self, dt)
         if n_prop > 0:
             print(f"Произошло {n_prop} реакций роста")
+
+    def plot(self, step=None, show_connections=True, save_path=None):
+        """
+        3D-визуализация текущего состояния реактора.
+        
+        Параметры:
+            step: номер шага (для заголовка)
+            show_connections: рисовать ли связи
+            save_path: если указан, сохранить изображение в файл
+        """
+        fig = plt.figure(figsize=(12, 10))
+        ax = fig.add_subplot(111, projection='3d')
+        
+        # Определяем цвета и размеры для разных типов частиц
+        style_map = {
+            ParticleType.INITIATOR:      {'color': 'red',    'size': 100, 'marker': 'o'},
+            ParticleType.SIM_BACKBONE:    {'color': 'gray',   'size': 50,  'marker': 's'},
+            ParticleType.SIM_VINYL:       {'color': 'green',  'size': 60,  'marker': '^'},
+            ParticleType.SIM_RADICAL:     {'color': 'blue',   'size': 80,  'marker': 'o'},
+            ParticleType.SIM_RADICAL_SLOW:{'color': 'cyan',   'size': 80,  'marker': 'o'},
+            ParticleType.SIM_INERT:       {'color': 'black',  'size': 40,  'marker': 'x'},
+            # Если появятся другие типы, можно добавить
+        }
+        
+        # Группируем частицы по типу для легенды
+        type_to_particles = defaultdict(list)
+        for p in self.particles:
+            type_to_particles[p.ptype].append(p.position)
+        
+        # Рисуем частицы каждого типа
+        for ptype, positions in type_to_particles.items():
+            if not positions:
+                continue
+            positions = np.array(positions)
+            style = style_map.get(ptype, {'color': 'purple', 'size': 50, 'marker': 'o'})
+            ax.scatter(positions[:, 0], positions[:, 1], positions[:, 2],
+                    c=style['color'], s=style['size'], marker=style['marker'],
+                    label=ptype.value, alpha=0.8)
+        
+        # Рисуем связи (опционально)
+        if show_connections and self.bonds:
+            for i, j in self.bonds:
+                if i >= len(self.particles) or j >= len(self.particles):
+                    continue  # защита от старых индексов
+                pos_i = self.particles[i].position
+                pos_j = self.particles[j].position
+                ax.plot([pos_i[0], pos_j[0]], [pos_i[1], pos_j[1]], [pos_i[2], pos_j[2]],
+                        'k-', linewidth=0.5, alpha=0.3)
+        
+        # Настройка осей
+        ax.set_xlim(0, self.config.size[0])
+        ax.set_ylim(0, self.config.size[1])
+        ax.set_zlim(0, self.config.size[2])
+        ax.set_xlabel('X (нм)')
+        ax.set_ylabel('Y (нм)')
+        ax.set_zlabel('Z (нм)')
+        
+        if step is not None:
+            ax.set_title(f'Состояние реактора, шаг {step}')
+        else:
+            ax.set_title('Состояние реактора')
+        
+        ax.legend(loc='upper left', bbox_to_anchor=(1.05, 1))
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+            print(f"Изображение сохранено: {save_path}")
+        else:
+            plt.show()
+        
+        plt.close(fig)
+        return fig
 
     def summary(self) -> str:
         """Краткая информация о реакторе."""
