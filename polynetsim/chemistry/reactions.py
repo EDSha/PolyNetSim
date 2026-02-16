@@ -24,16 +24,20 @@ def try_propagation(reactor, dt: float):
     particles = reactor.particles
     reactions = 0
 
+    # Индексы радикалов (обычных и медленных)
     radicals = [i for i, p in enumerate(particles) if p.ptype in (ParticleType.SIM_RADICAL, ParticleType.SIM_RADICAL_SLOW)]
+    # Индексы винильных групп (только те, которые ещё могут реагировать – имеют только внутримолекулярные связи)
     vinyls = [i for i, p in enumerate(particles) if p.ptype == ParticleType.SIM_VINYL and len(p.bonded_to) <= 1]
 
     for i_rad in radicals:
+        # Определяем тип радикала и эффективную константу
         is_slow = (particles[i_rad].ptype == ParticleType.SIM_RADICAL_SLOW)
         k_eff = kp * (0.1 if is_slow else 1.0)
 
         for i_vin in vinyls:
             if i_rad == i_vin:
                 continue
+            # Расстояние с учётом PBC
             delta = particles[i_vin].position - particles[i_rad].position
             if reactor.config.boundary_conditions == "periodic":
                 box = np.array(reactor.config.size)
@@ -46,7 +50,7 @@ def try_propagation(reactor, dt: float):
             if prob > 1.0:
                 prob = 1.0
             if random.random() < prob:
-                # Получаем chain_id и is_free
+                # Получаем информацию о цепях
                 chain_rad = particles[i_rad].chain_id
                 chain_vin = particles[i_vin].chain_id
                 vin_free = particles[i_vin].is_free
@@ -69,9 +73,11 @@ def try_propagation(reactor, dt: float):
                     if vin_free:
                         # Рост (присоединение свободного мономера)
                         # Все частицы мономера винила получают chain_id радикала и is_free=False
-                        for idx in get_particles_by_chain(reactor, chain_vin):
-                            particles[idx].chain_id = chain_rad
-                            particles[idx].is_free = False
+                        # Для этого нужно найти все частицы с chain_id == chain_vin
+                        for idx in range(len(particles)):
+                            if particles[idx].chain_id == chain_vin:
+                                particles[idx].chain_id = chain_rad
+                                particles[idx].is_free = False
                         particles[i_rad].ptype = ParticleType.SIM_INERT
                         particles[i_vin].ptype = ParticleType.SIM_RADICAL
                     else:
@@ -79,9 +85,13 @@ def try_propagation(reactor, dt: float):
                         # Объединяем цепи (меньший ID)
                         new_chain = min(chain_rad, chain_vin)
                         if new_chain == chain_rad:
-                            merge_chains(reactor, chain_rad, chain_vin)
+                            for idx in range(len(particles)):
+                                if particles[idx].chain_id == chain_vin:
+                                    particles[idx].chain_id = chain_rad
                         else:
-                            merge_chains(reactor, chain_vin, chain_rad)
+                            for idx in range(len(particles)):
+                                if particles[idx].chain_id == chain_rad:
+                                    particles[idx].chain_id = chain_vin
                         particles[i_rad].ptype = ParticleType.SIM_INERT
                         particles[i_vin].ptype = ParticleType.SIM_RADICAL_SLOW
 
