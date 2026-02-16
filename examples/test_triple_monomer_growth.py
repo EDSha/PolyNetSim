@@ -40,7 +40,7 @@ def main():
     config.params.bond.stiffness = 1000.0   # жёсткая связь
     config.params.bond.length = 1.0        # длина связи = 1σ
     
-    config.params.reaction.k_initiation = 0.01
+    config.params.reaction.k_initiation = 10.0
     config.params.reaction.k_propagation = 1.0
     config.params.reaction.reaction_radius = 1.5  # немного больше длины связи
     
@@ -65,7 +65,7 @@ def main():
             p.id = next_id
             reactor.add_particle(p)
             next_id += 1
-            
+
         for p in reactor.particles:
             p.velocity = np.random.normal(0, np.sqrt(1.0), 3)  # дисперсия = kT/m, m=1
         
@@ -100,13 +100,13 @@ def main():
 
     # Параметры интегрирования
     dt = 0.001          # уменьшенный шаг
-    steps = 500
+    steps = 2000
     record_interval = 50
     gamma = 0.0         # включаем термостат
 
     for step in range(steps):
         reactor.velocity_verlet_step(dt, gamma=gamma)
-        # reactor.react(dt)
+        reactor.react(dt)
 
         if step % record_interval == 0:
             n_init = sum(1 for p in reactor.particles if p.ptype==ParticleType.INITIATOR)

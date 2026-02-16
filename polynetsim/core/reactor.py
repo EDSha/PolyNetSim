@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from collections import defaultdict
 
+
 @dataclass
 class ReactorConfig:
     """Конфигурация реактора."""
@@ -240,15 +241,27 @@ class Reactor:
             self.particles[gi].bonded_to.append(gj)
             self.particles[gj].bonded_to.append(gi)
 
+    def relax(self, steps=50, dt=None, gamma=0.1):
+        """
+        Выполняет несколько шагов MD для релаксации системы.
+        steps - количество шагов
+        dt - шаг по времени (если None, используется текущий из основного цикла)
+        gamma - коэффициент трения для термостата
+        """
+        if dt is None:
+            dt = 0.001  # можно взять из основного, но лучше задать
+        for _ in range(steps):
+            self.velocity_verlet_step(dt, gamma=gamma)
 
-    def react(self, dt: float):
-        """Выполняет все возможные химические реакции за интервал dt."""
+    def react(self, dt):
         n_init = try_initiation(self, dt)
         if n_init > 0:
             print(f"Произошло {n_init} актов инициирования")
+            self.relax(steps=500, dt=dt*0.1, gamma=0.5)  # усиленная релаксация
         n_prop = try_propagation(self, dt)
         if n_prop > 0:
             print(f"Произошло {n_prop} реакций роста")
+            self.relax(steps=500, dt=dt*0.1, gamma=0.5)
 
     def plot(self, step=None, show_connections=True, save_path=None):
         """
