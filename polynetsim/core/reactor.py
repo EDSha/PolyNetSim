@@ -257,11 +257,11 @@ class Reactor:
         n_init = try_initiation(self, dt)
         if n_init > 0:
             print(f"Произошло {n_init} актов инициирования")
-            self.relax(steps=10000, dt=dt*0.1, gamma=0.5)  # усиленная релаксация
+            self.relax(steps=2500, dt=dt*0.1, gamma=0.5)  # усиленная релаксация
         n_prop = try_propagation(self, dt)
         if n_prop > 0:
             print(f"Произошло {n_prop} реакций роста")
-            self.relax(steps=10000, dt=dt*0.1, gamma=0.5)
+            self.relax(steps=2500, dt=dt*0.1, gamma=0.5)
 
     def plot(self, step=None, show_connections=True, save_path=None):
         """
