@@ -42,6 +42,7 @@ class ReactionParameters:
     k_initiation: float = 0.01   # константа инициирования (в единицах 1/τ)
     k_propagation: float = 1.0    # константа роста (в единицах 1/τ)
     reaction_radius: float = 2.0  # Радиус захвата радикала (в единицах σ)
+    avg_monomer_radius: float = 0.3  # средний радиус CG-частицы мономера (в нм)
     # позже добавим другие
 
 @dataclass

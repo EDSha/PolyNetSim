@@ -38,14 +38,23 @@ class Reactor:
         self.step = 0                  # номер шага
         self.bonds = []          # список кортежей (i, j) для ковалентных связей
         self.bond_set = set()  # множество кортежей (i, j) с i < j
+
+        # Параметры сетки (адресные микрообъёмы)
+        self.cell_size = 0.02  # размер ячейки в нм (0.2 Å)
+        # Вычисляем размеры сетки на основе конфигурации реактора
+        self.grid_shape = tuple(int(np.ceil(s / self.cell_size)) for s in self.config.size)
+        self.grid = np.zeros(self.grid_shape, dtype=np.uint8)  # 0 - свободно, 1 - занято        
         
     def add_particle(self, particle):
         """Добавить одну частицу в реактор."""
         self.particles.append(particle)
+        self.mark_particle(particle)
         
     def add_particles(self, particles: List):
         """Добавить список частиц."""
         self.particles.extend(particles)
+        for p in particles:
+            self.mark_particle(p)
     
     def apply_boundary_conditions(self, pos: np.ndarray) -> np.ndarray:
         """
@@ -296,10 +305,12 @@ class Reactor:
             if not positions:
                 continue
             positions = np.array(positions)
-            style = style_map.get(ptype, {'color': 'purple', 'size': 50, 'marker': 'o'})
+            style = style_map.get(ptype, {'color': 'purple', 'size': 1000, 'marker': 'o'})
             ax.scatter(positions[:, 0], positions[:, 1], positions[:, 2],
                     c=style['color'], s=style['size'], marker=style['marker'],
                     label=ptype.value, alpha=0.8)
+            
+
         
         # Рисуем связи (опционально)
         if show_connections and self.bonds:
@@ -336,6 +347,95 @@ class Reactor:
         
         plt.close(fig)
         return fig
+
+    def _world_to_grid(self, pos):
+        """
+        Преобразует мировые координаты (нм) в индексы ячейки сетки.
+        Возвращает кортеж (i, j, k).
+        """
+        i = int(pos[0] / self.cell_size)
+        j = int(pos[1] / self.cell_size)
+        k = int(pos[2] / self.cell_size)
+        # Гарантируем, что индексы в пределах сетки (для позиций на границе)
+        i = max(0, min(i, self.grid_shape[0]-1))
+        j = max(0, min(j, self.grid_shape[1]-1))
+        k = max(0, min(k, self.grid_shape[2]-1))
+        return (i, j, k)
+
+    def _grid_to_world(self, idx):
+        """
+        Преобразует индексы ячейки в мировые координаты её центра.
+        """
+        return (np.array(idx) + 0.5) * self.cell_size
+    
+    def _mark_cells_for_particle(self, particle, value):
+        """
+        Помечает ячейки, перекрываемые частицей, значением value (0 или 1).
+        Если value=1, ячейка считается занятой; value=0 – освобождает.
+        """
+        center = particle.position
+        radius = particle.radius
+        # Определяем диапазон ячеек, которые может задеть частица
+        min_corner = center - radius
+        max_corner = center + radius
+        i_min, j_min, k_min = self._world_to_grid(min_corner)
+        i_max, j_max, k_max = self._world_to_grid(max_corner)
+        # Перебираем все ячейки в этом кубе
+        for i in range(i_min, i_max+1):
+            for j in range(j_min, j_max+1):
+                for k in range(k_min, k_max+1):
+                    # Координата центра ячейки
+                    cell_center = self._grid_to_world((i, j, k))
+                    # Расстояние от центра ячейки до центра частицы
+                    dist = np.linalg.norm(cell_center - center)
+                    if dist <= radius:
+                        self.grid[i, j, k] = value
+
+    def mark_particle(self, particle):
+        """Помечает ячейки, занятые частицей."""
+        self._mark_cells_for_particle(particle, 1)
+
+    def unmark_particle(self, particle):
+        """Очищает ячейки, ранее занятые частицей."""
+        self._mark_cells_for_particle(particle, 0)
+
+    def update_grid(self):
+        """Полностью перестраивает сетку на основе текущих позиций частиц."""
+        self.grid.fill(0)
+        for p in self.particles:
+            self.mark_particle(p)
+
+    def is_cell_occupied(self, pos):
+        """
+        Проверяет, занята ли ячейка сетки, соответствующая координатам pos.
+        Возвращает True, если ячейка занята (значение 1), иначе False.
+        """
+        i, j, k = self._world_to_grid(pos)
+        return self.grid[i, j, k] == 1 
+
+    def plot_grid_slice(self, axis='z', index=None):
+        """
+        Отображает срез сетки вдоль заданной оси.
+        axis: 'x', 'y' или 'z'
+        index: номер среза (если None, берётся середина)
+        """
+        if axis == 'x':
+            slice_2d = self.grid[index, :, :] if index is not None else self.grid[self.grid_shape[0]//2, :, :]
+            xlabel, ylabel = 'Y', 'Z'
+        elif axis == 'y':
+            slice_2d = self.grid[:, index, :] if index is not None else self.grid[:, self.grid_shape[1]//2, :]
+            xlabel, ylabel = 'X', 'Z'
+        else:  # 'z'
+            slice_2d = self.grid[:, :, index] if index is not None else self.grid[:, :, self.grid_shape[2]//2+20]
+            xlabel, ylabel = 'X', 'Y'
+
+        plt.figure(figsize=(8,6))
+        plt.imshow(slice_2d.T, origin='lower', cmap='gray', interpolation='nearest')
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+        plt.title(f'Сетка, срез по {axis}')
+        plt.colorbar(label='Занято (1) / Свободно (0)')
+        plt.show()
 
     def summary(self) -> str:
         """Краткая информация о реакторе."""
