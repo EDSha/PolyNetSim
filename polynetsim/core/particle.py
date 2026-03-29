@@ -53,3 +53,10 @@ class Particle:
     def volume(self) -> float:
         """Объём частицы (сфера)."""
         return (4/3) * np.pi * self.radius**3
+    
+    def __post_init__(self):
+        if self.velocity is None:
+            self.velocity = np.zeros(3)
+        # Гарантируем, что position — массив numpy
+        if isinstance(self.position, (list, tuple)):
+            self.position = np.array(self.position, dtype=float)

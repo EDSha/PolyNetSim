@@ -43,8 +43,13 @@ class ReactionParameters:
     k_propagation: float = 1.0    # константа роста (в единицах 1/τ)
     reaction_radius: float = 2.0  # Радиус захвата радикала (в единицах σ)
     avg_monomer_radius: float = 0.3  # средний радиус CG-частицы мономера (в нм)
+    # Микроскопические константы (вычисляются из макроскопических и объёма реактора)
+    kp_micro: float = 0.0                  # будет переопределено в тесте (1/с)
+    kd_micro: float = 0.0                  # будет переопределено в тесте (1/с)
+    overlap_tolerance: float = 0.05  # допуск на перекрытие блуждающих частиц (5%)
     # позже добавим другие
 
+    
 @dataclass
 class ModelParameters:
     """Сводные параметры модели."""
@@ -52,3 +57,4 @@ class ModelParameters:
     bond: BondParameters = field(default_factory=BondParameters)
     reaction: ReactionParameters = field(default_factory=ReactionParameters)
     particle_params: Dict[str, ParticleTypeParams] = field(default_factory=lambda: PARTICLE_PARAMS)
+    

@@ -14,7 +14,7 @@ from polynetsim.chemistry.reactions import try_propagation, try_initiation
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from collections import defaultdict
+from collections import deque
 
 
 @dataclass
@@ -263,14 +263,41 @@ class Reactor:
             self.velocity_verlet_step(dt, gamma=gamma)
 
     def react(self, dt):
+        # Сначала обрабатываем инициирование (по-старому, без kMC)
         n_init = try_initiation(self, dt)
         if n_init > 0:
             print(f"Произошло {n_init} актов инициирования")
-            self.relax(steps=2500, dt=dt*0.1, gamma=0.5)  # усиленная релаксация
-        n_prop = try_propagation(self, dt)
-        if n_prop > 0:
-            print(f"Произошло {n_prop} реакций роста")
             self.relax(steps=2500, dt=dt*0.1, gamma=0.5)
+
+        # Теперь kMC для роста
+        total_rate, rates, rad_indices = self.compute_rates()
+        if total_rate > 0:
+            # Разыгрываем время до следующего события (формула Гиллеспи)
+            # Но у нас фиксированный шаг dt, поэтому можно упростить:
+            # вероятность события за dt = 1 - exp(-total_rate * dt)
+            # Если вероятность мала, можно использовать линейное приближение.
+            # Для теста используем линейное приближение: P = total_rate * dt
+            prob = total_rate * dt
+            if prob > 1.0:
+                prob = 1.0
+            if random.random() < prob:
+                # Выбираем, какой радикал сработал
+                r = random.random() * total_rate
+                cum = 0.0
+                chosen_idx = None
+                for rate, rad_idx in zip(rates, rad_indices):
+                    cum += rate
+                    if r < cum:
+                        chosen_idx = rad_idx
+                        break
+                if chosen_idx is not None:
+                    # Здесь нужно выполнить реакцию роста для выбранного радикала
+                    # Пока просто заглушка
+                    print(f"Реакция роста для радикала {chosen_idx}")
+                    # TODO: реализовать материализацию мономера
+                    # После реакции обновить глобальные доли и, возможно, N_max_global
+                    # И запустить релаксацию
+                    self.relax(steps=2500, dt=dt*0.1, gamma=0.5)
 
     def plot(self, step=None, show_connections=True, save_path=None):
         """
@@ -412,6 +439,176 @@ class Reactor:
         """
         i, j, k = self._world_to_grid(pos)
         return self.grid[i, j, k] == 1 
+    
+    def estimate_available_particles(self, rad_idx, vinyl_fraction=0.6667, return_positions=False):
+        """
+        Оценивает для радикала с индексом rad_idx:
+        - N_i: максимальное число блуждающих частиц (после геометрической упаковки)
+        - w_i: ожидаемое число винильных групп
+        - (опционально) positions: координаты размещённых частиц
+        """
+        rad = self.particles[rad_idx]
+        R_s = rad.radius + self.config.params.reaction.avg_monomer_radius
+
+        # Формируем список серых кругов
+        gray_circles = []
+        for p in self.particles:
+            if p.id == rad_idx: continue
+            vec = p.position - rad.position
+            dist = np.linalg.norm(vec)
+            if dist < 1e-6: continue
+            dir_gray = vec / dist
+            # Угловой радиус серого круга (с учётом радиуса зелёной частицы)
+            Rg = p.radius
+            Rb = self.config.params.reaction.avg_monomer_radius
+            cos_theta = (R_s**2 + dist**2 - (Rg + Rb)**2) / (2 * R_s * dist)
+            cos_theta = np.clip(cos_theta, -1, 1)
+            theta_gray = np.arccos(cos_theta)
+            gray_circles.append((dir_gray, theta_gray))
+
+        # Вызываем алгоритм упаковки
+        directions = self.pack_green_spheres(rad_idx, gray_circles)
+
+        N_i = len(directions)
+        w_i = N_i * vinyl_fraction
+
+        if return_positions:
+            positions = [rad.position + R_s * d for d in directions]
+            return N_i, w_i, np.array(positions)
+        else:
+            return N_i, w_i
+
+    def pack_green_spheres(self, rad_idx, gray_circles):
+        """
+        Плотная упаковка зелёных сфер на сфере вокруг радикала.
+        Возвращает список направлений (единичных векторов) для размещённых сфер.
+        """
+        rad = self.particles[rad_idx]
+        R_green = self.config.params.reaction.avg_monomer_radius
+        R_s = rad.radius + R_green
+
+        def angle_between(v1, v2):
+            cos = np.clip(np.dot(v1, v2), -1, 1)
+            return np.arccos(cos)
+
+        def get_third(A, B):
+            L12 = np.linalg.norm(A - B)
+            mid = (A + B) / 2.0
+            if L12 >= 4 * R_green:
+                return mid
+            h1 = np.sqrt(R_s**2 - (L12/2)**2)
+            h2 = np.sqrt(4*R_green**2 - (L12/2)**2)
+            ct = (h1**2 + h2**2 - R_s**2) / (2 * h1 * h2)
+            ct = np.clip(ct, -1, 1)
+            st = np.sqrt(1 - ct*ct)
+
+            nx = (rad.position - mid)
+            nx = nx / np.linalg.norm(nx)
+            ny = np.cross(B - A, nx)
+            ny = ny / np.linalg.norm(ny)
+
+            C = mid + nx * (ct * h2) + ny * (st * h2)
+            return C
+
+        def is_valid(C, placed):
+            dir_C = (C - rad.position) / np.linalg.norm(C - rad.position)
+            for g_dir, g_theta in gray_circles:
+                if angle_between(dir_C, g_dir) < g_theta - 1e-6:
+                    return False
+            for P in placed:
+                if np.linalg.norm(C - P) < 2*R_green - 1e-6:
+                    return False
+            return True
+
+        # Затравочная пара
+        alpha = np.arcsin(R_green / R_s)
+        ca2 = 1 - 2*alpha**2
+        sa2 = 2*alpha * np.sqrt(1 - alpha**2)
+        A0 = rad.position + R_s * np.array([1.0, 0.0, 0.0])
+        B0 = rad.position + R_s * np.array([ca2, sa2, 0.0])
+
+        placed = [A0, B0]
+        edges = deque()
+        edges.append((0, 1))
+        edges.append((1, 0))
+
+        max_iter = 10000
+        iter_count = 0
+
+        while edges and iter_count < max_iter:
+            iter_count += 1
+            u, v = edges.popleft()
+
+            A = placed[u]
+            B = placed[v]
+
+            C = get_third(A, B)
+
+            if is_valid(C, placed):
+                new_idx = len(placed)
+                placed.append(C)
+                edges.append((u, new_idx))
+                edges.append((new_idx, v))
+            else:
+                # Ищем пересекающуюся сферу
+                intersect_idx = None
+                for idx, P in enumerate(placed):
+                    if np.linalg.norm(C - P) < 2*R_green - 1e-6:
+                        intersect_idx = idx
+                        break
+                if intersect_idx is not None:
+                    C1 = get_third(A, placed[intersect_idx])
+                    if is_valid(C1, placed):
+                        new_idx = len(placed)
+                        placed.append(C1)
+                        edges.append((u, new_idx))
+                        edges.append((new_idx, intersect_idx))
+                        continue
+                    C2 = get_third(placed[intersect_idx], B)
+                    if is_valid(C2, placed):
+                        new_idx = len(placed)
+                        placed.append(C2)
+                        edges.append((intersect_idx, new_idx))
+                        edges.append((new_idx, v))
+                        continue
+                # Если ничего не подошло, просто пропускаем это ребро
+
+        directions = []
+        for P in placed:
+            dir = P - rad.position
+            dir = dir / np.linalg.norm(dir)
+            directions.append(dir)
+
+        return directions      
+
+    def compute_rates(self):
+        params = self.config.params.reaction
+        kp_micro = params.kp_micro
+        vinyl_fraction = 2/3
+        N_max_global = params.N_max_global
+        if N_max_global <= 0:
+            print("Warning: N_max_global not set, using N_i without diffusion factor")
+            factor = 1.0
+        else:
+            factor = None  # будет вычисляться для каждого радикала
+
+        total_rate = 0.0
+        rates = []
+        radical_indices = []
+
+        for i, p in enumerate(self.particles):
+            if p.ptype in (ParticleType.SIM_RADICAL, ParticleType.SIM_RADICAL_SLOW):
+                N_i, w_i = self.estimate_available_particles(i, vinyl_fraction=vinyl_fraction)
+                if N_max_global > 0:
+                    diff_factor = N_i / N_max_global
+                else:
+                    diff_factor = 1.0
+                rate = kp_micro * diff_factor * w_i
+                total_rate += rate
+                rates.append(rate)
+                radical_indices.append(i)
+
+        return total_rate, rates, radical_indices
 
     def plot_grid_slice(self, axis='z', index=None):
         """
